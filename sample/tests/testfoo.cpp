@@ -46,7 +46,7 @@ TEST_F(FooTest, SometimesBazFalseIsTrue) {
 
 // simple test
 TEST(FooTestSuite, AlwaysTrue) {
-    ASSERT_EQ(true, true);
+    ASSERT_EQ(true, false);
 }
 
 // simple test with long name
