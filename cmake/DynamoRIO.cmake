@@ -1,10 +1,10 @@
 # Fetch the DynamoRIO release.
 include(FetchContent)
 if (WIN32)
-    set(DynamoRIO_URL "https://github.com/DynamoRIO/dynamorio/releases/download/release_9.0.1/DynamoRIO-Windows-9.0.1.zip")
+    set(DynamoRIO_URL "https://github.com/DynamoRIO/dynamorio/releases/download/cronbuild-11.90.20418/DynamoRIO-Windows-11.90.20418.zip")
 endif (WIN32)
 if (UNIX)
-    set(DynamoRIO_URL "https://github.com/DynamoRIO/dynamorio/releases/download/release_9.0.1/DynamoRIO-Linux-9.0.1.tar.gz")
+    set(DynamoRIO_URL "https://github.com/DynamoRIO/dynamorio/releases/download/cronbuild-11.90.20418/DynamoRIO-Linux-11.90.20418.tar.gz")
 endif (UNIX)
 if ("${DynamoRIO_URL}" STREQUAL "")
 	message(FATAL_ERROR "Your OS is currently not supported by DynamoRIO.")

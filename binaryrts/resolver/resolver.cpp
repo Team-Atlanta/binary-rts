@@ -195,6 +195,10 @@ SymbolResolver::findSymbol(const std::string &moduleName, const fs::path &module
                 if (options.debug)
                     printf("WARN: Memory leak when querying symbol 0x%zx in %s\n", symbol->offset,
                            modulePath.string().c_str());
+            } else if (symres == DRSYM_ERROR_LINE_NOT_AVAILABLE) {
+                if (options.debug)
+                    printf("WARN: Line info not available for symbol 0x%zx in %s (binary may lack debug info)\n",
+                           symbol->offset, modulePath.string().c_str());
             }
             // In case we didn't find symbols, we still update the status for the cached offset.
             if (symbol->status != CoveredSymbol::SymbolStatus::EXCLUDED &&
@@ -267,7 +271,7 @@ SymbolResolver::analyzeCoverageFile(const fs::path &file) {
                 currentModule->coveredSymbols.reserve(numBBs);
                 for (int i = 0; i < numBBs; i++) {
                     void *offset;
-                    // We could also read all bytes at once, but the stdlib (or the OS) should pick a good buffer size 
+                    // We could also read all bytes at once, but the stdlib (or the OS) should pick a good buffer size
                     // for I/O read operations that reduces the number of OS context switches.
                     fread(&offset, sizeof(void *), 1, fp);
                     const CoveredSymbol *symbol = findSymbol(currentModule->moduleName, currentModule->modulePath,

@@ -32,6 +32,11 @@
 
 #include "dr_api.h"
 #include "drmgr.h"
+
+/* Compatibility macro for newer DynamoRIO versions */
+#ifndef OUT
+#define OUT DR_PARAM_OUT
+#endif
 #include "drreg.h"
 #include "drx.h"
 #include "drsyms.h"
@@ -610,7 +615,7 @@ covlib_exit(void) {
     if (options.syscalls) {
         dr_close_file(syscalls_dump_file);
         drvector_delete(&opened_files);
-        dr_unregister_filter_syscall_event(event_filter_syscall);
+        drmgr_unregister_filter_syscall_event(event_filter_syscall);
         drmgr_unregister_pre_syscall_event(event_pre_syscall);
     }
 
@@ -718,7 +723,7 @@ covlib_init(covlib_options_t *ops) {
         sysnum_file_open = SYS_open;
         sysnum_file_openat = SYS_openat;
 #endif
-        dr_register_filter_syscall_event(event_filter_syscall);
+        drmgr_register_filter_syscall_event(event_filter_syscall);
         drmgr_register_pre_syscall_event(event_pre_syscall);
     }
 

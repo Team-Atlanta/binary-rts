@@ -11,6 +11,7 @@
 
 #ifdef __linux__
     #include <unistd.h>  // readlink()
+    #include <cstdint>
 #elif _WIN32
     #include <windows.h> // GetModuleFileName()
 #endif

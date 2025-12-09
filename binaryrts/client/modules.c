@@ -33,6 +33,11 @@
 #include "dr_api.h"
 #include "drvector.h"
 #include "drmgr.h"
+
+/* Compatibility macro for newer DynamoRIO versions */
+#ifndef OUT
+#define OUT DR_PARAM_OUT
+#endif
 #include "modules.h"
 #include "utils.h"
 #include <string.h>
