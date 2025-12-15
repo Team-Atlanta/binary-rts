@@ -10,7 +10,7 @@ make PIN_ROOT=/path/to/pin-kit
 
 Example:
 ```bash
-make PIN_ROOT=~/post/pin-external-4.0-99633-g5ca9893f2-gcc-linux
+make PIN_ROOT=/opt/pin-external-4.0-99633-g5ca9893f2-gcc-linux
 ```
 
 ## Usage
