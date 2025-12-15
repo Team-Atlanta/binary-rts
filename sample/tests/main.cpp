@@ -2,7 +2,48 @@
 #include <iostream>
 #include <fstream>
 
-#ifdef TEST_LISTENER
+#ifdef PIN_LISTENER
+#include "pin_test_listener.h"
+
+class CoverageEventListener : public testing::EmptyTestEventListener {
+public:
+
+    void OnTestProgramStart(const testing::UnitTest& test) override {
+        startRun();
+        PinTestListener::TestProgramStart();
+    }
+
+    void OnTestSuiteStart(const testing::TestSuite& testSuite) override {
+        PinTestListener::TestSuiteStart(testSuite.name());
+    }
+
+    void OnTestStart(const testing::TestInfo& testInfo) override {
+        PinTestListener::TestStart(testInfo.name());
+    }
+
+    void OnTestEnd(const testing::TestInfo& test_info) override {
+        PinTestListener::TestEnd(test_info.result()->Passed() ? "PASSED": "FAILED");
+    }
+
+    void OnTestSuiteEnd(const testing::TestSuite& testSuite) override {
+        PinTestListener::TestSuiteEnd(testSuite.Passed() ? "PASSED" : "FAILED");
+    }
+
+    void OnTestProgramEnd(const testing::UnitTest& test) override {
+        PinTestListener::TestProgramEnd();
+        finishRun();
+    }
+
+private:
+    void finishRun() {
+        std::cout << "After OnTestProgramEnd in CoverageEventListener" << std::endl;
+    }
+    void startRun() {
+        std::cout << "Before OnTestProgramStart in CoverageEventListener" << std::endl;
+    }
+};
+
+#elif defined(TEST_LISTENER)
 #include "test_listener.h"
 
 class CoverageEventListener : public testing::EmptyTestEventListener {
@@ -73,7 +114,7 @@ int main(int argc, char **argv) {
         ::testing::GTEST_FLAG(filter) = ParseExcludesFileToGoogleTestFilter(excludes_file, previousFilter);
     }
 #endif
-#ifdef TEST_LISTENER
+#if defined(TEST_LISTENER) || defined(PIN_LISTENER)
     // Gets hold of the event listener list.
     ::testing::UnitTest::GetInstance()->listeners().Append(new CoverageEventListener());
 #endif
