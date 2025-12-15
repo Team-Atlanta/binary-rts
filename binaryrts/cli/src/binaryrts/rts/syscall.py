@@ -1,25 +1,26 @@
 import logging
 import re
 from pathlib import Path
-from typing import Set, Tuple, Dict, List, Any
+from typing import Set, Tuple, Dict, List, Any, Union
 
 from binaryrts.parser.coverage import TestFileTraces
 from binaryrts.rts.base import RTSAlgo
 from binaryrts.vcs.base import ChangelistItemAction, Changelist
 from binaryrts.vcs.git import GitClient
+from binaryrts.vcs.diff_file import DiffFileClient
 
 
 class SyscallFileLevelRTS(RTSAlgo):
     def __init__(
         self,
-        git_client: GitClient,
+        vcs_client: Union[GitClient, DiffFileClient],
         output_dir: Path,
         test_file_traces: TestFileTraces,
         includes_regex: str = ".*",
         excludes_regex: str = "",
     ) -> None:
         super().__init__(
-            git_client=git_client,
+            vcs_client=vcs_client,
             output_dir=output_dir,
             includes_regex=includes_regex,
             excludes_regex=excludes_regex,
@@ -30,7 +31,7 @@ class SyscallFileLevelRTS(RTSAlgo):
         self, from_revision: str, to_revision: str
     ) -> Tuple[Set[str], Set[str], Dict[str, List[Any]]]:
         affected_files: Set[str] = set()
-        changelist: Changelist = self.git_client.get_diff(
+        changelist: Changelist = self.vcs_client.get_diff(
             from_revision=from_revision, to_revision=to_revision
         )
         includes_pattern = re.compile(self.includes_regex, flags=re.IGNORECASE)

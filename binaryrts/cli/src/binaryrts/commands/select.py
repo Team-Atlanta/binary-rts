@@ -1,9 +1,10 @@
 import json
 import logging
 import os
+import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Union
 
 import typer
 
@@ -22,6 +23,20 @@ from binaryrts.rts.syscall import SyscallFileLevelRTS
 from binaryrts.util.fs import has_ext
 from binaryrts.util.logging import LogEvent
 from binaryrts.vcs.git import is_git_repo, GitClient
+from binaryrts.vcs.diff_file import DiffFileClient
+
+
+def get_dirty_diff(repo_root: Path) -> str:
+    """Get uncommitted changes (staged + unstaged) as a unified diff."""
+    result = subprocess.run(
+        ["git", "diff", "HEAD"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"git diff HEAD failed: {result.stderr}")
+    return result.stdout
 
 app = typer.Typer()
 
@@ -35,12 +50,13 @@ RTS_END_EVENT: str = "END_BINARY_RTS_SELECTION"
 
 @dataclass
 class SelectCommonOptions:
-    git_client: GitClient
+    vcs_client: Union[GitClient, DiffFileClient]
     output: Path
     from_revision: str
     to_revision: str
     includes_regex: str
     excludes_regex: str
+    repo_root: Path
 
 
 @dataclass
@@ -55,17 +71,17 @@ class RTSConfiguration:
     non_functional_analysis_depth: int = field(default=1)
 
 
-def _repo_callback(value: Path) -> Path:
-    if not is_git_repo(path=value):
-        raise typer.BadParameter("Only git directories are allowed as repo root.")
+def _repo_callback(ctx: typer.Context, param: typer.CallbackParam, value: Path) -> Path:
+    # Skip git validation if --diff-file is provided
+    # We check this by looking at the raw CLI params since ctx.params may not have all values yet
     return value
 
 
 @app.callback()
 def select(
     ctx: typer.Context,
-    from_revision: str = typer.Option("main", "--from", "-f"),
-    to_revision: str = typer.Option("HEAD", "--to", "-t"),
+    from_revision: str = typer.Option("", "--from", "-f", help="Git revision to diff from (ignored if --diff-file or --dirty is used)"),
+    to_revision: str = typer.Option("", "--to", "-t", help="Git revision to diff to (ignored if --diff-file or --dirty is used)"),
     repo_root: Path = typer.Option(
         lambda: Path(os.getcwd()),
         "--repo",
@@ -74,6 +90,27 @@ def select(
         dir_okay=True,
         resolve_path=True,
         callback=_repo_callback,
+    ),
+    diff_file: Optional[Path] = typer.Option(
+        None,
+        "--diff-file",
+        "--diff",
+        exists=True,
+        file_okay=True,
+        dir_okay=False,
+        resolve_path=True,
+        help="Path to a unified diff file. When provided, --from and --to are ignored.",
+    ),
+    dirty: bool = typer.Option(
+        False,
+        "--dirty",
+        "--uncommitted",
+        help="Use uncommitted changes (staged + unstaged) as the diff. Repo must be a git directory.",
+    ),
+    repo_state: str = typer.Option(
+        "old",
+        "--repo-state",
+        help="State of repository when using --diff-file: 'old' (pre-change, default) or 'new' (post-change).",
     ),
     output: Path = typer.Option(
         lambda: Path(os.getcwd()),
@@ -96,15 +133,57 @@ def select(
     ),
 ):
     """
-    Select tests
+    Select tests based on code changes.
+
+    Changes can be specified via:
+    - Git revisions (--from/--to): Compare two commits
+    - Diff file (--diff-file): Use a unified diff file
+    - Dirty mode (--dirty): Use uncommitted changes in the working directory
     """
+    vcs_client: Union[GitClient, DiffFileClient]
+
+    if dirty:
+        # Use dirty/uncommitted changes mode
+        if not is_git_repo(path=repo_root):
+            raise typer.BadParameter(
+                "Repository root must be a git directory when using --dirty."
+            )
+        diff_content = get_dirty_diff(repo_root)
+        if not diff_content.strip():
+            logging.warning("No uncommitted changes found (git diff HEAD is empty)")
+        logging.info(f"Using dirty/uncommitted changes (repo_state=new)")
+        # Working directory has changes applied, so repo_state is always "new"
+        vcs_client = DiffFileClient(root=repo_root, diff_content=diff_content, repo_state="new")
+        from_revision = "HEAD"
+        to_revision = "dirty"
+    elif diff_file is not None:
+        # Use diff file mode - no git required
+        logging.info(f"Using diff file: {diff_file} (repo_state={repo_state})")
+        vcs_client = DiffFileClient(root=repo_root, diff_file=diff_file, repo_state=repo_state)
+        # Set meaningful revision names for diff file mode
+        from_revision = "old"
+        to_revision = "new"
+    else:
+        # Use git mode - validate repo and set defaults
+        if not is_git_repo(path=repo_root):
+            raise typer.BadParameter(
+                "Repository root must be a git directory when not using --diff-file or --dirty. "
+                "Use --diff-file to provide a unified diff instead."
+            )
+        if not from_revision:
+            from_revision = "main"
+        if not to_revision:
+            to_revision = "HEAD"
+        vcs_client = GitClient(root=repo_root)
+
     ctx.obj = SelectCommonOptions(
-        git_client=GitClient(root=repo_root),
+        vcs_client=vcs_client,
         output=output,
         from_revision=from_revision,
         to_revision=to_revision,
         includes_regex=includes_regex,
         excludes_regex=excludes_regex,
+        repo_root=repo_root,
     )
     output.mkdir(parents=True, exist_ok=True)
 
@@ -223,11 +302,11 @@ def cpp(
     function_lookup_table: FunctionLookupTable
     if has_ext(function_lookup_file, exts=[".csv"]):
         function_lookup_table = FunctionLookupTable.from_csv(
-            function_lookup_file, root_dir=opts.git_client.root
+            function_lookup_file, root_dir=opts.repo_root
         )
     elif has_ext(function_lookup_file, exts=[".pkl"]):
         function_lookup_table = FunctionLookupTable.from_pickle(function_lookup_file)
-        function_lookup_table.root_dir = opts.git_client.root
+        function_lookup_table.root_dir = opts.repo_root
     else:
         raise Exception(
             f"Provided invalid function lookup file format, only .csv and .pkl are currently supported."
@@ -260,7 +339,7 @@ def cpp(
         try:
             if config.file_level:
                 rts_algo = CppFileLevelRTS(
-                    git_client=opts.git_client,
+                    vcs_client=opts.vcs_client,
                     function_lookup_table=function_lookup_table,
                     test_function_traces=test_function_traces,
                     output_dir=output_dir,
@@ -272,7 +351,7 @@ def cpp(
                 )
             else:
                 rts_algo = CppFunctionLevelRTS(
-                    git_client=opts.git_client,
+                    vcs_client=opts.vcs_client,
                     function_lookup_table=function_lookup_table,
                     test_function_traces=test_function_traces,
                     output_dir=output_dir,
@@ -442,7 +521,7 @@ def syscalls(
         )
 
     rts_algo: RTSAlgo = SyscallFileLevelRTS(
-        git_client=opts.git_client,
+        vcs_client=opts.vcs_client,
         test_file_traces=test_file_traces,
         output_dir=opts.output,
         includes_regex=opts.includes_regex,

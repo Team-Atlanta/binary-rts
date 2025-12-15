@@ -2,7 +2,7 @@ import logging
 import re
 from abc import ABC
 from pathlib import Path
-from typing import List, Optional, Tuple, Set, Dict, Any
+from typing import List, Optional, Tuple, Set, Dict, Any, Union
 
 from binaryrts.parser.coverage import (
     FunctionLookupTable,
@@ -20,6 +20,7 @@ from binaryrts.rts.diff import CodeDiffAnalyzer
 from binaryrts.util.fs import temp_file, get_parent, has_ext
 from binaryrts.vcs.base import Changelist, ChangelistItemAction, ChangelistItem
 from binaryrts.vcs.git import GitClient
+from binaryrts.vcs.diff_file import DiffFileClient
 
 
 class CppBaseRTS(RTSAlgo, ABC):
@@ -27,7 +28,7 @@ class CppBaseRTS(RTSAlgo, ABC):
         self,
         function_lookup_table: FunctionLookupTable,
         test_function_traces: TestFunctionTraces,
-        git_client: GitClient,
+        vcs_client: Union[GitClient, DiffFileClient],
         output_dir: Path,
         includes_regex: str = ".*",
         excludes_regex: str = "",
@@ -36,7 +37,7 @@ class CppBaseRTS(RTSAlgo, ABC):
         retest_all_regex: Optional[str] = None,
     ) -> None:
         super().__init__(
-            git_client=git_client,
+            vcs_client=vcs_client,
             output_dir=output_dir,
             includes_regex=includes_regex,
             excludes_regex=excludes_regex,
@@ -79,7 +80,7 @@ class CppFileLevelRTS(CppBaseRTS):
         self,
         function_lookup_table: FunctionLookupTable,
         test_function_traces: TestFunctionTraces,
-        git_client: GitClient,
+        vcs_client: Union[GitClient, DiffFileClient],
         output_dir: Path,
         includes_regex: str = ".*",
         excludes_regex: str = "",
@@ -90,7 +91,7 @@ class CppFileLevelRTS(CppBaseRTS):
         super().__init__(
             function_lookup_table=function_lookup_table,
             test_function_traces=test_function_traces,
-            git_client=git_client,
+            vcs_client=vcs_client,
             output_dir=output_dir,
             includes_regex=includes_regex,
             excludes_regex=excludes_regex,
@@ -103,7 +104,7 @@ class CppFileLevelRTS(CppBaseRTS):
         self, from_revision: str, to_revision: str
     ) -> Tuple[Set[str], Set[str], Dict[str, List[Any]]]:
         affected_function_ids: Set[int] = set()
-        changelist: Changelist = self.git_client.get_diff(
+        changelist: Changelist = self.vcs_client.get_diff(
             from_revision=from_revision, to_revision=to_revision
         )
 
@@ -161,7 +162,7 @@ class CppFileLevelRTS(CppBaseRTS):
 class CppFunctionLevelRTS(CppBaseRTS):
     def __init__(
         self,
-        git_client: GitClient,
+        vcs_client: Union[GitClient, DiffFileClient],
         function_lookup_table: FunctionLookupTable,
         test_function_traces: TestFunctionTraces,
         output_dir: Path,
@@ -182,7 +183,7 @@ class CppFunctionLevelRTS(CppBaseRTS):
         super().__init__(
             function_lookup_table=function_lookup_table,
             test_function_traces=test_function_traces,
-            git_client=git_client,
+            vcs_client=vcs_client,
             output_dir=output_dir,
             includes_regex=includes_regex,
             excludes_regex=excludes_regex,
@@ -266,7 +267,7 @@ class CppFunctionLevelRTS(CppBaseRTS):
         to_revision: str,
     ) -> Tuple[Set[str], Set[str], Dict[str, List[Any]]]:
         affected_function_ids: Set[int] = set()
-        changelist: Changelist = self.git_client.get_diff(
+        changelist: Changelist = self.vcs_client.get_diff(
             from_revision=from_revision, to_revision=to_revision
         )
         # Note: We include function prototypes here, as when parsing for changed functions,
@@ -313,7 +314,7 @@ class CppFunctionLevelRTS(CppBaseRTS):
                 with temp_file(suffix=".cxx") as new_file:
                     with new_file.open("w+", newline="\n", encoding="utf-8") as n_fp:
                         n_fp.write(
-                            self.git_client.get_file_content_at_revision(
+                            self.vcs_client.get_file_content_at_revision(
                                 revision=to_revision, filepath=change_item.filepath
                             )
                         )
@@ -343,7 +344,7 @@ class CppFunctionLevelRTS(CppBaseRTS):
                                         change_item.filepath,
                                         depth=self.non_functional_analysis_depth,
                                     ),
-                                    file_relative_to=self.git_client.root,
+                                    file_relative_to=self.vcs_client.root,
                                 )
                             )
 
@@ -351,7 +352,7 @@ class CppFunctionLevelRTS(CppBaseRTS):
                 with temp_file(suffix=".cxx") as old_file:
                     with old_file.open("w+", newline="\n", encoding="utf-8") as o_fp:
                         o_fp.write(
-                            self.git_client.get_file_content_at_revision(
+                            self.vcs_client.get_file_content_at_revision(
                                 revision=from_revision, filepath=change_item.filepath
                             )
                         )
@@ -382,7 +383,7 @@ class CppFunctionLevelRTS(CppBaseRTS):
                                         change_item.filepath,
                                         depth=self.non_functional_analysis_depth,
                                     ),
-                                    file_relative_to=self.git_client.root,
+                                    file_relative_to=self.vcs_client.root,
                                 )
                             )
 
@@ -393,7 +394,7 @@ class CppFunctionLevelRTS(CppBaseRTS):
                             "w+", newline="\n", encoding="utf-8"
                         ) as n_fp:
                             n_fp.write(
-                                self.git_client.get_file_content_at_revision(
+                                self.vcs_client.get_file_content_at_revision(
                                     revision=to_revision, filepath=change_item.filepath
                                 )
                             )
@@ -401,7 +402,7 @@ class CppFunctionLevelRTS(CppBaseRTS):
                             "w+", newline="\n", encoding="utf-8"
                         ) as o_fp:
                             o_fp.write(
-                                self.git_client.get_file_content_at_revision(
+                                self.vcs_client.get_file_content_at_revision(
                                     revision=from_revision,
                                     filepath=change_item.filepath,
                                 )
@@ -456,12 +457,12 @@ class CppFunctionLevelRTS(CppBaseRTS):
                                         depth=self.non_functional_analysis_depth,
                                     )
                                     logging.info(
-                                        f"Macro analysis in {analysis_root_dir} with git repo {self.git_client.root}"
+                                        f"Macro analysis in {analysis_root_dir} with git repo {self.vcs_client.root}"
                                     )
                                     affected_function_ids |= self._get_ids_of_affected_function_for_non_functional(
                                         symbol_name=non_func.name,
                                         root_dir=analysis_root_dir,
-                                        file_relative_to=self.git_client.root,
+                                        file_relative_to=self.vcs_client.root,
                                     )
 
         logging.debug(

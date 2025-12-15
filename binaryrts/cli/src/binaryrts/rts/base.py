@@ -1,15 +1,16 @@
 from abc import ABC, abstractmethod
 from enum import Enum
 from pathlib import Path
-from typing import Tuple, Set, Dict, List, Any, Optional
+from typing import Tuple, Set, Dict, List, Any, Optional, Union
 
 from binaryrts.vcs.git import GitClient
+from binaryrts.vcs.diff_file import DiffFileClient
 
 
 class RTSAlgo(ABC):
     def __init__(
         self,
-        git_client: GitClient,
+        vcs_client: Union[GitClient, DiffFileClient],
         output_dir: Path,
         includes_regex: str = ".*",
         excludes_regex: str = "",
@@ -17,7 +18,7 @@ class RTSAlgo(ABC):
         generated_code_exts: Optional[List[str]] = None,
         retest_all_regex: Optional[str] = None,
     ) -> None:
-        self.git_client = git_client
+        self.vcs_client = vcs_client
         self.output_dir = output_dir
         self.includes_regex = includes_regex
         self.excludes_regex = excludes_regex
