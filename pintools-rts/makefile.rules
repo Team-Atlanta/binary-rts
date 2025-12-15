@@ -1,0 +1,11 @@
+# Pin tool build rules
+# This file is included by the Pin kit's makefile system
+
+# Tool name
+TEST_TOOL_ROOTS := functrace
+
+# Build the tool as a shared library
+TOOL_CXXFLAGS += -std=c++11
+
+# No test applications needed
+TEST_ROOTS :=

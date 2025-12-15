@@ -1,0 +1,25 @@
+# Build outputs
+obj-intel64/
+obj-ia32/
+*.o
+*.so
+*.dylib
+
+# Compiled binaries
+test_program
+
+# Output and log files
+*.out
+*.log
+output.txt
+
+# Editor and IDE
+*~
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
