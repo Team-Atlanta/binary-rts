@@ -1,13 +1,23 @@
 # Makefile for functrace Pin tool (Pin 4.x compatible)
 #
 # Usage:
-#   make PIN_ROOT=/path/to/pin
+#   make PIN_ROOT=/path/to/pin                             # Build functrace with gcc
+#   make listener CC=clang CXX_BASE=clang++                # Build listener with clang
+#   make all-with-listener PIN_ROOT=/path/to/pin CC=clang CXX_BASE=clang++
 #
 # Example:
 #   make PIN_ROOT=~/post/pin-external-4.0-99633-g5ca9893f2-gcc-linux
+#   make all-with-listener PIN_ROOT=~/post/pin-external-4.0-99633-g5ca9893f2-gcc-linux CC=clang CXX_BASE=clang++
 
 # Pin kit root - must be set by user
 PIN_ROOT ?= $(HOME)/pin
+
+# Compiler selection for listener library - defaults to gcc
+# Set CC=clang CXX_BASE=clang++ to build listener with clang
+# Note: Pin tool (functrace.so) always uses pin-g++ wrapper (gcc-based)
+#       as Pin doesn't provide a clang-compatible wrapper
+CC ?= gcc
+CXX_BASE ?= g++
 
 # Architecture detection
 ARCH := $(shell uname -m)
@@ -81,10 +91,10 @@ $(TOOL): $(OBJDIR)$(TOOL_NAME).o
 
 # Listener library targets
 $(LISTENER_DIR)/pin_annotations.o: $(LISTENER_DIR)/pin_annotations.c $(LISTENER_DIR)/pin_annotations.h
-	gcc -c -fPIC -O2 -o $@ $<
+	$(CC) -c -fPIC -O2 -o $@ $<
 
 $(LISTENER_DIR)/pin_test_listener.o: $(LISTENER_DIR)/pin_test_listener.cpp $(LISTENER_DIR)/pin_test_listener.h $(LISTENER_DIR)/pin_annotations.h
-	g++ -std=c++17 -c -fPIC -O2 -I$(LISTENER_DIR) -o $@ $<
+	$(CXX_BASE) -std=c++17 -c -fPIC -O2 -I$(LISTENER_DIR) -o $@ $<
 
 $(LISTENER_LIB): $(LISTENER_OBJS)
 	ar rcs $@ $^
@@ -113,7 +123,7 @@ check:
 
 # Test program
 test_program: test_program.c
-	gcc -g -o test_program test_program.c
+	$(CC) -g -o test_program test_program.c
 
 # Run the tool on test program
 test: $(TOOL) test_program
