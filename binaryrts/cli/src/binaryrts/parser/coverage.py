@@ -1,4 +1,5 @@
 import logging
+import os
 import re
 import subprocess as sb
 from abc import ABC, abstractmethod
@@ -198,7 +199,8 @@ class FunctionLookupTable(SerializerMixin):
             file_key = filepath.relative_to(self.root_dir).__str__()
         else:
             file_key = filepath.__str__()
-        return file_key
+        # Normalize path to handle cases like "test/../mcs.c" -> "mcs.c"
+        return os.path.normpath(file_key)
 
     def update_function_cache(self):
         for func in self.all_functions_ordered_by_id:
@@ -237,6 +239,8 @@ class FunctionLookupTable(SerializerMixin):
                     and is_relative_to(file, root_dir)
                 ):
                     func.file = Path(func.file).relative_to(root_dir).__str__()
+                # Normalize path to handle cases like "test/../mcs.c" -> "mcs.c"
+                func.file = os.path.normpath(func.file)
                 if func.file not in table:
                     table[func.file] = []
                 table[func.file].append(func)
