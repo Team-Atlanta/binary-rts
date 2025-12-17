@@ -2,22 +2,22 @@
 #
 # Usage:
 #   make PIN_ROOT=/path/to/pin                             # Build functrace with gcc
-#   make listener CC=clang CXX_BASE=clang++                # Build listener with clang
-#   make all-with-listener PIN_ROOT=/path/to/pin CC=clang CXX_BASE=clang++
+#   make listener CC=clang CXX=clang++                # Build listener with clang
+#   make all-with-listener PIN_ROOT=/path/to/pin CC=clang CXX=clang++
 #
 # Example:
 #   make PIN_ROOT=~/post/pin-external-4.0-99633-g5ca9893f2-gcc-linux
-#   make all-with-listener PIN_ROOT=~/post/pin-external-4.0-99633-g5ca9893f2-gcc-linux CC=clang CXX_BASE=clang++
+#   make all-with-listener PIN_ROOT=~/post/pin-external-4.0-99633-g5ca9893f2-gcc-linux CC=clang CXX=clang++
 
 # Pin kit root - must be set by user
 PIN_ROOT ?= $(HOME)/pin
 
 # Compiler selection for listener library - defaults to gcc
-# Set CC=clang CXX_BASE=clang++ to build listener with clang
+# Set CC=clang CXX=clang++ to build listener with clang
 # Note: Pin tool (functrace.so) always uses pin-g++ wrapper (gcc-based)
 #       as Pin doesn't provide a clang-compatible wrapper
 CC ?= gcc
-CXX_BASE ?= g++
+CXX ?= g++
 
 # Architecture detection
 ARCH := $(shell uname -m)
@@ -34,8 +34,8 @@ OBJDIR := obj-$(TARGET)/
 TOOL_NAME := functrace
 TOOL := $(OBJDIR)$(TOOL_NAME).so
 
-# Pin 4.x uses its own compiler wrapper
-CXX := $(PIN_ROOT)/$(TARGET)/pinrt/bin/pin-g++
+# Pin 4.x uses its own compiler wrapper (cannot be overridden)
+PIN_CXX := $(PIN_ROOT)/$(TARGET)/pinrt/bin/pin-g++
 
 # Include paths for Pin 4.x
 PIN_INCLUDES := -I$(PIN_ROOT)/source/include/pin \
@@ -84,17 +84,17 @@ $(OBJDIR):
 	mkdir -p $(OBJDIR)
 
 $(OBJDIR)%.o: %.cpp
-	$(CXX) $(PIN_CXXFLAGS) -c -o $@ $<
+	$(PIN_CXX) $(PIN_CXXFLAGS) -c -o $@ $<
 
 $(TOOL): $(OBJDIR)$(TOOL_NAME).o
-	$(CXX) $(PIN_LDFLAGS) -o $@ $< $(PIN_LIBS)
+	$(PIN_CXX) $(PIN_LDFLAGS) -o $@ $< $(PIN_LIBS)
 
 # Listener library targets
 $(LISTENER_DIR)/pin_annotations.o: $(LISTENER_DIR)/pin_annotations.c $(LISTENER_DIR)/pin_annotations.h
 	$(CC) -c -fPIC -O2 -o $@ $<
 
 $(LISTENER_DIR)/pin_test_listener.o: $(LISTENER_DIR)/pin_test_listener.cpp $(LISTENER_DIR)/pin_test_listener.h $(LISTENER_DIR)/pin_annotations.h
-	$(CXX_BASE) -std=c++17 -c -fPIC -O2 -I$(LISTENER_DIR) -o $@ $<
+	$(CXX) -std=c++17 -c -fPIC -O2 -I$(LISTENER_DIR) -o $@ $<
 
 $(LISTENER_LIB): $(LISTENER_OBJS)
 	ar rcs $@ $^
@@ -112,13 +112,14 @@ check:
 		echo "Error: PIN_ROOT=$(PIN_ROOT) does not exist"; \
 		exit 1; \
 	fi
-	@if [ ! -f "$(CXX)" ]; then \
-		echo "Error: Pin compiler not found at $(CXX)"; \
+	@if [ ! -f "$(PIN_CXX)" ]; then \
+		echo "Error: Pin compiler not found at $(PIN_CXX)"; \
 		echo "Make sure you're using Pin 4.x"; \
 		exit 1; \
 	fi
 	@echo "PIN_ROOT=$(PIN_ROOT) - OK"
-	@echo "Compiler=$(CXX) - OK"
+	@echo "Pin Compiler=$(PIN_CXX) - OK"
+	@echo "Listener CC=$(CC), CXX=$(CXX)"
 	@echo "Target: $(TARGET)"
 
 # Test program
