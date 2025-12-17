@@ -156,6 +156,11 @@ def cpp(
         "--java",
         help="Whether to analyze coverage from java tests (one coverage file per test suite, no test modules here).",
     ),
+    ctest_mode: bool = typer.Option(
+        False,
+        "--ctest",
+        help="Whether to analyze coverage from CTest tests (one coverage file per test, like java mode).",
+    ),
     resolve_symbols: bool = typer.Option(
         False,
         "--symbols",
@@ -217,6 +222,7 @@ def cpp(
         if not resolve_symbols
         else None,  # the regex is passed to the resolver anyways...
         java_mode=java_mode,
+        ctest_mode=ctest_mode,
     )
 
     all_coverage_files: List[Path] = _filter_and_sort_coverage_files(

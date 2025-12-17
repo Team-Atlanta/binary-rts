@@ -1,12 +1,22 @@
 import logging
 import os
+import re
+import sys
 from collections import defaultdict
+from enum import Enum
 from pathlib import Path
 from typing import List, Set, Optional, Dict
 
 import typer
 
 from binaryrts.commands.select import EXCLUDED_TESTS_FILE
+
+
+class TestFramework(str, Enum):
+    GTEST = "gtest"
+    CTEST = "ctest"
+
+
 from binaryrts.parser.conversion.base import CoverageFormat, CoverageConverter
 from binaryrts.parser.conversion.lcov import LCOVCoverageConverter
 from binaryrts.parser.conversion.sonar import SonarCoverageConverter
@@ -300,4 +310,108 @@ def compare_traces(
         f"Writing missing functions to file {output_file}"
     )
     output_file.write_text(f"{missing_functions}")
+
+
+def _convert_gtest_filter(lines: List[str]) -> str:
+    """
+    Convert binaryrts test identifiers to GoogleTest filter format.
+
+    Input format: module!!!TestSuite!!!TestCase
+    Output format: TestSuite.TestCase:TestSuite2.TestCase2:...
+    """
+    filters = []
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        # Split by !!! separator
+        parts = line.split("!!!")
+        if len(parts) >= 3:
+            # module!!!Suite!!!Case -> Suite.Case
+            test_suite = parts[1]
+            test_case = parts[2]
+            filters.append(f"{test_suite}.{test_case}")
+        elif len(parts) == 2:
+            # module!!!Suite -> Suite.*
+            test_suite = parts[1]
+            filters.append(f"{test_suite}.*")
+    return ":".join(filters)
+
+
+def _convert_ctest_filter(lines: List[str]) -> str:
+    """
+    Convert binaryrts test identifiers to CTest regex filter format.
+
+    Input format: *!!!TestName!!!*
+    Output format: TestName1|TestName2|...
+    """
+    filters = []
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        # Extract test name from *!!!TestName!!!* format
+        match = re.match(r"\*!!!([^!]+)!!!\*", line)
+        if match:
+            filters.append(match.group(1))
+        else:
+            # Try splitting by !!! for other formats
+            parts = line.split("!!!")
+            if len(parts) >= 2:
+                # Use the middle part as test name
+                filters.append(parts[1])
+    return "|".join(filters)
+
+
+@app.command()
+def filter(
+    input_file: Path = typer.Argument(
+        ...,
+        exists=True,
+        file_okay=True,
+        dir_okay=False,
+        resolve_path=True,
+        help="Path to included.txt or excluded.txt from selection output.",
+    ),
+    framework: TestFramework = typer.Option(
+        ...,
+        "--framework",
+        "-f",
+        help="Target test framework format.",
+    ),
+):
+    """
+    Convert selection output to test framework filter format.
+
+    Converts included.txt or excluded.txt to the appropriate filter format
+    for the target test framework. Output is printed to stdout.
+
+    Examples:
+
+        # GoogleTest: outputs Suite.Case:Suite2.Case2
+        binaryrts utils filter included.txt -f gtest
+
+        # CTest: outputs TestName1|TestName2
+        binaryrts utils filter included.txt -f ctest
+
+    Usage in scripts:
+
+        # GoogleTest
+        GTEST_FILTER=$(binaryrts utils filter included.txt -f gtest)
+
+        # CTest
+        ctest -R "$(binaryrts utils filter included.txt -f ctest)"
+    """
+    with input_file.open("r", encoding="utf-8") as fp:
+        lines = fp.readlines()
+
+    if framework == TestFramework.GTEST:
+        result = _convert_gtest_filter(lines)
+    elif framework == TestFramework.CTEST:
+        result = _convert_ctest_filter(lines)
+    else:
+        raise typer.BadParameter(f"Unknown framework: {framework}")
+
+    # Output to stdout (no logging, just the filter string)
+    print(result)
 

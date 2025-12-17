@@ -639,6 +639,7 @@ class CoverageParser:
         extension: str,
         lookup_files: List[Path],
         java_mode: bool = False,
+        ctest_mode: bool = False,
         regex: Optional[str] = None,
     ) -> None:
         self.extension: str = extension
@@ -650,6 +651,7 @@ class CoverageParser:
             for file in lookup_files
         }
         self.java_mode = java_mode
+        self.ctest_mode = ctest_mode  # CTest mode: treat each test as a suite (like java_mode)
         self.regex: Optional[Pattern] = (
             re.compile(regex, flags=re.IGNORECASE) if regex is not None else None
         )
@@ -694,12 +696,12 @@ class CoverageParser:
             file_name_without_ext
         ]
         if not test_module:
-            if self.java_mode:
-                test_module = "*"  # in java, we do not have one binary (i.e., test module) per test
+            if self.java_mode or self.ctest_mode:
+                test_module = "*"  # in java/ctest, we do not have one binary (i.e., test module) per test
             else:
                 test_module = file.parent.name
         if not test_suite:
-            if self.java_mode:
+            if self.java_mode or self.ctest_mode:
                 test_suite = test_identifier
             else:
                 test_suite = test_identifier.split(TEST_SUITE_CASE_SEP)[0].split(
@@ -709,7 +711,7 @@ class CoverageParser:
                 ]  # cut off __RESULT or __setup
         if (
             not test_case and TEST_SUITE_CASE_SEP not in test_identifier
-        ) or self.java_mode:
+        ) or self.java_mode or self.ctest_mode:
             test_case = "*"
         elif not test_case and TEST_SUITE_CASE_SEP in test_identifier:
             test_case_with_result: str = test_identifier.split(TEST_SUITE_CASE_SEP)[1]

@@ -27,6 +27,7 @@
 #include <unordered_map>
 #include <mutex>
 #include <sys/stat.h>
+#include <unistd.h>
 
 /* ===================================================================== */
 /* Command Line Options                                                  */
@@ -61,6 +62,9 @@ KNOB<std::string> KnobLogDir(KNOB_MODE_WRITEONCE, "pintool",
 KNOB<std::string> KnobModulesFile(KNOB_MODE_WRITEONCE, "pintool",
     "modules", "", "Output file for module list (optional)");
 
+KNOB<BOOL> KnobFollowChild(KNOB_MODE_WRITEONCE, "pintool",
+    "follow_child", "0", "Follow child processes (fork/exec)");
+
 /* ===================================================================== */
 /* Global Variables                                                      */
 /* ===================================================================== */
@@ -74,6 +78,7 @@ static std::mutex TraceLock;
 static int DumpCount = 0;
 static std::ofstream LookupFile;
 static std::unordered_set<ADDRINT> CurrentTestFunctions;
+static std::string ProcessSuffix;  // Unique suffix for this process (PID-based)
 
 /* Function metadata for coverage dumps */
 struct FunctionInfo {
@@ -154,8 +159,8 @@ static VOID HandleCoverageDump(ADDRINT dumpIdArg)
 
     DumpCount++;
 
-    // Write current coverage to numbered file
-    std::string filename = KnobLogDir.Value() + "/" + std::to_string(DumpCount) + ".log";
+    // Write current coverage to numbered file (include PID suffix if following children)
+    std::string filename = KnobLogDir.Value() + "/" + ProcessSuffix + std::to_string(DumpCount) + ".log";
     std::ofstream dumpFile(filename);
 
     if (dumpFile.is_open()) {
@@ -179,9 +184,9 @@ static VOID HandleCoverageDump(ADDRINT dumpIdArg)
         dumpFile.close();
     }
 
-    // Update lookup file
+    // Update lookup file (include suffix to match log filename)
     if (LookupFile.is_open()) {
-        LookupFile << DumpCount << ";" << dumpId << std::endl;
+        LookupFile << ProcessSuffix << DumpCount << ";" << dumpId << std::endl;
         LookupFile.flush();
     }
 
@@ -368,6 +373,30 @@ static VOID Fini(INT32 code, VOID* v)
 /* Usage/Help                                                            */
 /* ===================================================================== */
 
+/* ===================================================================== */
+/* Child Process Handling                                                */
+/* ===================================================================== */
+
+// Called before a child process is created (fork/exec)
+// Return TRUE to inject Pin into the child, FALSE to let it run natively
+static BOOL FollowChildProcess(CHILD_PROCESS childProcess, VOID* v)
+{
+    if (!KnobFollowChild.Value()) {
+        return FALSE;  // Don't follow child processes
+    }
+
+    // Get info about the child
+    OS_PROCESS_ID childPid = CHILD_PROCESS_GetId(childProcess);
+
+    std::cerr << "[functrace] Following child process PID " << childPid << std::endl;
+
+    return TRUE;  // Inject Pin into the child process
+}
+
+/* ===================================================================== */
+/* Usage/Help                                                            */
+/* ===================================================================== */
+
 static INT32 Usage()
 {
     std::cerr << "Function Trace Pin Tool" << std::endl;
@@ -377,6 +406,7 @@ static INT32 Usage()
     std::cerr << "Test mode (for unit test coverage):" << std::endl;
     std::cerr << "  -runtime_dump     Enable per-test coverage dumps" << std::endl;
     std::cerr << "  -logdir <dir>     Directory for per-test log files" << std::endl;
+    std::cerr << "  -follow_child     Follow child processes (fork/exec)" << std::endl;
     std::cerr << std::endl;
     std::cerr << KNOB_BASE::StringKnobSummary() << std::endl;
     return -1;
@@ -404,9 +434,18 @@ int main(int argc, char* argv[])
             return 1;
         }
 
-        // Open lookup file
+        // Set process suffix for unique filenames when following children
+        if (KnobFollowChild.Value()) {
+            ProcessSuffix = "pid" + std::to_string(PIN_GetPid()) + "_";
+        } else {
+            ProcessSuffix = "";
+        }
+
+        // Open lookup file (append mode when following children to collect all entries)
         std::string lookupPath = KnobLogDir.Value() + "/dump-lookup.log";
-        LookupFile.open(lookupPath);
+        std::ios_base::openmode mode = KnobFollowChild.Value() ?
+            (std::ios::out | std::ios::app) : std::ios::out;
+        LookupFile.open(lookupPath, mode);
         if (!LookupFile.is_open()) {
             std::cerr << "Error: Could not open lookup file "
                       << lookupPath << std::endl;
@@ -431,6 +470,11 @@ int main(int argc, char* argv[])
     IMG_AddInstrumentFunction(ImageLoad, 0);
     RTN_AddInstrumentFunction(InstrumentRoutine, 0);
     PIN_AddFiniFunction(Fini, 0);
+
+    // Register child process callback if enabled
+    if (KnobFollowChild.Value()) {
+        PIN_AddFollowChildProcessFunction(FollowChildProcess, 0);
+    }
 
     // Start the program
     PIN_StartProgram();
