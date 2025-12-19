@@ -65,6 +65,9 @@ KNOB<std::string> KnobModulesFile(KNOB_MODE_WRITEONCE, "pintool",
 KNOB<BOOL> KnobFollowChild(KNOB_MODE_WRITEONCE, "pintool",
     "follow_child", "0", "Follow child processes (fork/exec)");
 
+KNOB<BOOL> KnobDumpOnExit(KNOB_MODE_WRITEONCE, "pintool",
+    "dump_on_exit", "0", "Dump coverage on process exit (for standalone test executables)");
+
 /* ===================================================================== */
 /* Global Variables                                                      */
 /* ===================================================================== */
@@ -356,6 +359,43 @@ static VOID ImageLoad(IMG img, VOID* v)
 static VOID Fini(INT32 code, VOID* v)
 {
     if (KnobRuntimeDump.Value()) {
+        // If dump_on_exit is enabled, dump coverage now using the executable name as test ID
+        if (KnobDumpOnExit.Value() && !CurrentTestFunctions.empty()) {
+            std::lock_guard<std::mutex> guard(TraceLock);
+
+            DumpCount++;
+
+            // Write coverage to file using main executable name as identifier
+            std::string filename = KnobLogDir.Value() + "/" + ProcessSuffix + std::to_string(DumpCount) + ".log";
+            std::ofstream dumpFile(filename);
+
+            if (dumpFile.is_open()) {
+                // Header line: module_name<tab>module_path
+                dumpFile << MainExeName << "\t" << MainExePath << "\n";
+
+                // Write each function that was called
+                for (ADDRINT addr : CurrentTestFunctions) {
+                    auto it = FunctionMetadata.find(addr);
+                    if (it != FunctionMetadata.end()) {
+                        const FunctionInfo& info = it->second;
+                        ADDRINT offset = info.rtnAddr - info.imgLow;
+                        dumpFile << "\t+0x" << std::hex << offset << std::dec
+                                 << "\t" << (info.srcFile.empty() ? "??" : info.srcFile)
+                                 << "\t" << info.rtnName
+                                 << "\t" << info.srcLine
+                                 << "\n";
+                    }
+                }
+                dumpFile.close();
+            }
+
+            // Update lookup file with main executable name as test ID
+            if (LookupFile.is_open()) {
+                LookupFile << ProcessSuffix << DumpCount << ";" << MainExeName << std::endl;
+                LookupFile.flush();
+            }
+        }
+
         // Close lookup file
         if (LookupFile.is_open()) {
             LookupFile.close();
@@ -407,6 +447,7 @@ static INT32 Usage()
     std::cerr << "  -runtime_dump     Enable per-test coverage dumps" << std::endl;
     std::cerr << "  -logdir <dir>     Directory for per-test log files" << std::endl;
     std::cerr << "  -follow_child     Follow child processes (fork/exec)" << std::endl;
+    std::cerr << "  -dump_on_exit     Dump coverage on process exit (for standalone tests)" << std::endl;
     std::cerr << std::endl;
     std::cerr << KNOB_BASE::StringKnobSummary() << std::endl;
     return -1;
