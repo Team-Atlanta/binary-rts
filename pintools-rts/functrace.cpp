@@ -68,6 +68,9 @@ KNOB<BOOL> KnobFollowChild(KNOB_MODE_WRITEONCE, "pintool",
 KNOB<BOOL> KnobDumpOnExit(KNOB_MODE_WRITEONCE, "pintool",
     "dump_on_exit", "0", "Dump coverage on process exit (for standalone test executables)");
 
+KNOB<std::string> KnobTraceOnly(KNOB_MODE_WRITEONCE, "pintool",
+    "trace_only", "", "Only trace/record coverage for executables matching these patterns (comma-separated, supports prefix* wildcards)");
+
 /* ===================================================================== */
 /* Global Variables                                                      */
 /* ===================================================================== */
@@ -99,6 +102,9 @@ static std::unordered_map<ADDRINT, FunctionInfo> FunctionMetadata;
 /* Main executable info for output header */
 static std::string MainExeName;
 static std::string MainExePath;
+
+/* Process filtering */
+static bool ShouldTraceProcess = true;  // Set to false if process doesn't match -trace_only
 
 /* ===================================================================== */
 /* Helper Functions                                                      */
@@ -148,6 +154,57 @@ static bool EnsureDirectory(const std::string& path)
         return S_ISDIR(st.st_mode);
     }
     return mkdir(path.c_str(), 0755) == 0;
+}
+
+// Check if executable name matches -trace_only patterns
+// Patterns are comma-separated, supports suffix matching with * wildcard (e.g., "test-*")
+static bool MatchesTraceOnlyPatterns(const std::string& exeName)
+{
+    std::string patterns = KnobTraceOnly.Value();
+    if (patterns.empty())
+        return true;  // No filter = trace everything
+
+    size_t start = 0;
+    size_t end;
+    while (true) {
+        end = patterns.find(',', start);
+        std::string pattern = (end == std::string::npos) ?
+            patterns.substr(start) : patterns.substr(start, end - start);
+
+        // Trim whitespace
+        size_t pstart = pattern.find_first_not_of(" \t");
+        size_t pend = pattern.find_last_not_of(" \t");
+        if (pstart != std::string::npos && pend != std::string::npos) {
+            pattern = pattern.substr(pstart, pend - pstart + 1);
+        }
+
+        if (!pattern.empty()) {
+            // Check for wildcard at end (prefix match)
+            if (pattern.back() == '*') {
+                std::string prefix = pattern.substr(0, pattern.length() - 1);
+                if (exeName.compare(0, prefix.length(), prefix) == 0) {
+                    return true;
+                }
+            }
+            // Check for wildcard at start (suffix match)
+            else if (pattern.front() == '*') {
+                std::string suffix = pattern.substr(1);
+                if (exeName.length() >= suffix.length() &&
+                    exeName.compare(exeName.length() - suffix.length(), suffix.length(), suffix) == 0) {
+                    return true;
+                }
+            }
+            // Exact match
+            else if (exeName == pattern) {
+                return true;
+            }
+        }
+
+        if (end == std::string::npos) break;
+        start = end + 1;
+    }
+
+    return false;
 }
 
 /* ===================================================================== */
@@ -206,6 +263,10 @@ static VOID FunctionEntry(ADDRINT rtnAddr, const char* rtnName,
                           const char* imgName, ADDRINT imgLow,
                           UINT32 rtnSize, const char* srcFile, INT32 srcLine)
 {
+    // Skip if this process doesn't match -trace_only filter
+    if (!ShouldTraceProcess)
+        return;
+
     std::lock_guard<std::mutex> guard(TraceLock);
 
     CallCount++;
@@ -333,6 +394,13 @@ static VOID ImageLoad(IMG img, VOID* v)
     if (IMG_IsMainExecutable(img)) {
         MainExePath = imgName;
         MainExeName = BaseName(imgName);
+
+        // Check if this process should be traced based on -trace_only filter
+        ShouldTraceProcess = MatchesTraceOnlyPatterns(MainExeName);
+        if (!ShouldTraceProcess) {
+            std::cerr << "[functrace] Skipping trace for: " << MainExeName
+                      << " (does not match -trace_only patterns)" << std::endl;
+        }
     }
 
     if (!KnobRuntimeDump.Value()) {
@@ -360,7 +428,8 @@ static VOID Fini(INT32 code, VOID* v)
 {
     if (KnobRuntimeDump.Value()) {
         // If dump_on_exit is enabled, dump coverage now using the executable name as test ID
-        if (KnobDumpOnExit.Value() && !CurrentTestFunctions.empty()) {
+        // Skip if this process doesn't match -trace_only filter
+        if (KnobDumpOnExit.Value() && !CurrentTestFunctions.empty() && ShouldTraceProcess) {
             std::lock_guard<std::mutex> guard(TraceLock);
 
             DumpCount++;
@@ -448,6 +517,8 @@ static INT32 Usage()
     std::cerr << "  -logdir <dir>     Directory for per-test log files" << std::endl;
     std::cerr << "  -follow_child     Follow child processes (fork/exec)" << std::endl;
     std::cerr << "  -dump_on_exit     Dump coverage on process exit (for standalone tests)" << std::endl;
+    std::cerr << "  -trace_only <pat> Only trace executables matching patterns (comma-separated)" << std::endl;
+    std::cerr << "                    Supports wildcards: test-* matches test-foo, *.sh matches foo.sh" << std::endl;
     std::cerr << std::endl;
     std::cerr << KNOB_BASE::StringKnobSummary() << std::endl;
     return -1;
