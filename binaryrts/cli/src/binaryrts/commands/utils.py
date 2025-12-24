@@ -9,7 +9,9 @@ from typing import List, Set, Optional, Dict
 
 import typer
 
-from binaryrts.commands.select import EXCLUDED_TESTS_FILE
+
+# Constant duplicated here to avoid circular import with select.py
+EXCLUDED_TESTS_FILE: str = "excluded.txt"
 
 
 class TestFramework(str, Enum):
@@ -345,22 +347,64 @@ def _convert_ctest_filter(lines: List[str]) -> str:
     Input format: *!!!TestName!!!*
     Output format: TestName1|TestName2|...
     """
-    filters = []
+    return "|".join(extract_test_names(lines))
+
+
+def extract_test_name(test_id: str) -> str:
+    """
+    Extract plain test name from binaryrts test identifier format.
+
+    Handles formats:
+    - *!!!TestName!!!* -> TestName
+    - module!!!Suite!!!Case -> Suite!!!Case
+    - plain_name -> plain_name
+    """
+    test_id = test_id.strip()
+    if not test_id:
+        return ""
+    # CTest format: *!!!TestName!!!*
+    match = re.match(r"\*!!!([^!]+)!!!\*", test_id)
+    if match:
+        return match.group(1)
+    # GTest format: module!!!Suite!!!Case - keep Suite!!!Case
+    parts = test_id.split("!!!")
+    if len(parts) >= 2:
+        return "!!!".join(parts[1:])
+    return test_id
+
+
+def extract_test_names(lines: List[str]) -> List[str]:
+    """
+    Extract plain test names from a list of binaryrts test identifiers.
+    Filters out empty lines.
+    """
+    result = []
     for line in lines:
-        line = line.strip()
-        if not line:
-            continue
-        # Extract test name from *!!!TestName!!!* format
-        match = re.match(r"\*!!!([^!]+)!!!\*", line)
-        if match:
-            filters.append(match.group(1))
-        else:
-            # Try splitting by !!! for other formats
-            parts = line.split("!!!")
-            if len(parts) >= 2:
-                # Use the middle part as test name
-                filters.append(parts[1])
-    return "|".join(filters)
+        name = extract_test_name(line)
+        if name:
+            result.append(name)
+    return result
+
+
+def format_test_list(test_ids: List[str], simple: bool = False) -> str:
+    """
+    Format a list of test identifiers for output.
+
+    Args:
+        test_ids: List of test identifiers
+        simple: If True, extract plain test names (strips *!!!...!!!* markers)
+
+    Returns:
+        Newline-separated string with trailing newline for shell compatibility
+    """
+    if simple:
+        names = extract_test_names(test_ids)
+    else:
+        names = [t.strip() for t in test_ids if t.strip()]
+
+    if not names:
+        return ""
+    return "\n".join(names) + "\n"
 
 
 @app.command()

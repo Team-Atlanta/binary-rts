@@ -24,6 +24,7 @@ from binaryrts.util.fs import has_ext
 from binaryrts.util.logging import LogEvent
 from binaryrts.vcs.git import is_git_repo, GitClient
 from binaryrts.vcs.diff_file import DiffFileClient
+from binaryrts.commands.utils import format_test_list
 
 
 def get_dirty_diff(repo_root: Path) -> str:
@@ -57,6 +58,7 @@ class SelectCommonOptions:
     includes_regex: str
     excludes_regex: str
     repo_root: Path
+    simple_output: bool = False
 
 
 @dataclass
@@ -131,6 +133,12 @@ def select(
         "--excludes",
         help="Regular expression to exclude certain files or directories from selection.",
     ),
+    simple_output: bool = typer.Option(
+        False,
+        "--simple-output",
+        "--simple",
+        help="Output simple test names (strips *!!!...!!!* markers) with trailing newlines for easier shell parsing.",
+    ),
 ):
     """
     Select tests based on code changes.
@@ -184,6 +192,7 @@ def select(
         includes_regex=includes_regex,
         excludes_regex=excludes_regex,
         repo_root=repo_root,
+        simple_output=simple_output,
     )
     output.mkdir(parents=True, exist_ok=True)
 
@@ -379,16 +388,18 @@ def cpp(
             )
 
             (output_dir / INCLUDED_TESTS_FILE).write_text(
-                "\n".join(included_tests), encoding="utf-8"
+                format_test_list(list(included_tests), simple=opts.simple_output),
+                encoding="utf-8"
             )
             (output_dir / EXCLUDED_TESTS_FILE).write_text(
-                "\n".join(excluded_tests), encoding="utf-8"
+                format_test_list(list(excluded_tests), simple=opts.simple_output),
+                encoding="utf-8"
             )
             with (output_dir / SELECTION_CAUSES_FILE).open("w+") as fp:
                 json.dump(selection_causes, fp)
         except Exception as e:
             logging.error(f"Error occurred in RTS, falling back to retest-all: {e}")
-            (output_dir / INCLUDED_TESTS_FILE).write_text("*", encoding="utf-8")
+            (output_dir / INCLUDED_TESTS_FILE).write_text("*\n", encoding="utf-8")
             (output_dir / EXCLUDED_TESTS_FILE).write_text("", encoding="utf-8")
             with (output_dir / SELECTION_CAUSES_FILE).open("w+") as fp:
                 json.dump({"*": [SelectionCause.SELECTION_FAILURE.value]}, fp)
@@ -534,10 +545,12 @@ def syscalls(
         )
 
         (opts.output / INCLUDED_TESTS_FILE).write_text(
-            "\n".join(included_tests), encoding="utf-8"
+            format_test_list(list(included_tests), simple=opts.simple_output),
+            encoding="utf-8"
         )
         (opts.output / EXCLUDED_TESTS_FILE).write_text(
-            "\n".join(excluded_tests), encoding="utf-8"
+            format_test_list(list(excluded_tests), simple=opts.simple_output),
+            encoding="utf-8"
         )
         with (opts.output / SELECTION_CAUSES_FILE).open("w+") as fp:
             json.dump(selection_causes, fp)
@@ -548,7 +561,7 @@ def syscalls(
 
     except Exception as e:
         logging.error(f"Error occurred in RTS, falling back to retest-all: {e}")
-        (opts.output / INCLUDED_TESTS_FILE).write_text("*", encoding="utf-8")
+        (opts.output / INCLUDED_TESTS_FILE).write_text("*\n", encoding="utf-8")
         (opts.output / EXCLUDED_TESTS_FILE).write_text("", encoding="utf-8")
         with (opts.output / SELECTION_CAUSES_FILE).open("w+") as fp:
             json.dump({"*": [SelectionCause.SELECTION_FAILURE.value]}, fp)
