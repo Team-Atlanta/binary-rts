@@ -397,10 +397,6 @@ static VOID ImageLoad(IMG img, VOID* v)
 
         // Check if this process should be traced based on -trace_only filter
         ShouldTraceProcess = MatchesTraceOnlyPatterns(MainExeName);
-        if (!ShouldTraceProcess) {
-            std::cerr << "[functrace] Skipping trace for: " << MainExeName
-                      << " (does not match -trace_only patterns)" << std::endl;
-        }
     }
 
     if (!KnobRuntimeDump.Value()) {
@@ -496,8 +492,6 @@ static BOOL FollowChildProcess(CHILD_PROCESS childProcess, VOID* v)
 
     // Get info about the child
     OS_PROCESS_ID childPid = CHILD_PROCESS_GetId(childProcess);
-
-    std::cerr << "[functrace] Following child process PID " << childPid << std::endl;
 
     return TRUE;  // Inject Pin into the child process
 }
